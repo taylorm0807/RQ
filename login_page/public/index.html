@@ -97,6 +97,8 @@
         var playlistArr;
         var queue = [];
         var isSearchbarOut = false;
+        var songIds = [];
+        var songId;
 
         //The templates for the different "pages" of the website
         var queueSource = document.getElementById('queue-template').innerHTML,
@@ -278,27 +280,67 @@
                     'Authorization': 'Bearer ' + access_token
                 },
                 success: function(response) {
-                    console.log(response.tracks.items);
-                    displayAutocompleteTracks(response.tracks.items);
                     //display all tracks under searchbar
+                    displayAutocompleteTracks(response.tracks.items);
                 }
             });
         }
 
         //show the autocomplete results under searchbar
         function displayAutocompleteTracks(items){
-            var parentDiv = document.getElementById('autocomplete-results');
+            var parentDiv = document.getElementById("autocomplete-results");
             //delete previous search results
             while(parentDiv.firstChild){
                 parentDiv.removeChild(parentDiv.firstChild);
             }
+            songIds = [];
+            var length = items.length;
             //loop through each track and display the information
-            for(var i = 0; i < items.length; i++){
-                var data = items[i].name + " - " + getArtists(items[i]);
-                var song = document.createElement("div");
-                song.innerHTML = data;
-                parentDiv.append(song);
+            for(var k = 0; k < length; k++){
+                console.log(k)
+                var data = items[k].name + " - " + getArtists(items[k]);
+                var result = document.createElement("div");
+                result.id = "" + items[k].id;
+                result.className = "autocomplete-res";
+                //add onclick to autofill searchbar and set songId variable
+                result.addEventListener('click', function(){
+                    console.log(result.id);
+                    //selectSong(data, items[i].id);
+                    //var searchbar = document.getElementById('song-searchbar');
+                    //go through songs to find the one that matches, then store the id
+                    // for(var j = 0; j < songIds.length; j++){
+                    //     if((songIds[j].song + " - " + songIds[j].artist) == result.innerHTML){
+                    //         songId = songIds[j].id;
+                    //         searchbar.value = result.innerHTML;
+                    //     }
+                    // }
+                })
+                result.innerHTML = data;
+                songIds.push({"id": items[k].id, "song": items[k].name, "artist": getArtists(items[k])});
+                parentDiv.appendChild(result);
             }
+        }
+
+        // function showPlaylists(data){
+        //     var parentDiv = document.getElementById("parentDiv");
+        //     var length = data.playlists.length;
+        //     for(let i = 0; i < length; i++){
+        //         var name = document.createElement("div");
+        //         name.id = "playlist";
+        //         name.addEventListener('click', function(){
+        //             showSongs(data.playlists[i].name, data.playlists[i].id);
+        //         })
+        //         name.className = "playlist-name";
+        //         name.innerHTML = data.playlists[i].name;
+        //         parentDiv.appendChild(name); 
+        //     }
+        //     document.getElementById('playlist-button').addEventListener('click', function(){
+        //         showSongs("", "");
+        //     });
+        // }
+
+        function selectSong(songData, id){
+            console.log(songData);
         }
 
         //gets the artists on a given song(could be multiple, seperate with ',')
