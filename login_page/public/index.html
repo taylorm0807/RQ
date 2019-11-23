@@ -1,0 +1,344 @@
+<!doctype html>
+<html>
+  <head>
+    <link rel="stylesheet" href="./style.css" /> 
+    <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css">
+    <title>Squad Aux - Listen And Queue Music With Friends</title>
+    <style type="text/css">
+      #login, #loggedin {
+        display: none;
+      }
+      .text-overflow {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        width: 500px;
+      }
+    </style>
+  </head>
+
+  <body style="background-color: #212121">
+    <div>
+      <div id="login" class="login-page">
+        <h1 class="login-text">Log In To Start The Party!</h1>
+        <a href="/login" class="btn login-button">Log in with Spotify</a>
+      </div>
+      <div id="loggedin">
+        <div id="generate-playlist" class="queue-page">
+        </div>
+        <div id="oauth">
+        </div>
+        <!-- <button class="btn btn-default" id="obtain-new-token">Obtain new token using the refresh token</button> -->
+      </div>
+      <div id="main-queue">
+        <div id="queue" class="queue-page">
+        </div>
+      </div>
+    </div>
+
+    <script id="generate-playlist-template" type="text/x-handlebars-template">
+      <h1 class="login-text">Logged in as {{display_name}}</h1>
+      <h4 class="login-subtitle-text">Current Playlists</h4>
+      <div id="parentDiv"></div>
+      <button class="btn login-button" id="playlist-button">Create New Playlist</button>
+    </script>
+
+    <script id="queue-template" type="text/x-handlebars-template">
+        <h1 class="login-text">Songs in queue for "{{playlist_name}}"</h1>
+        <table class="table" width="50%">
+            <thead>
+                <tr class="queue-table-row">
+                    <th scope="col">Position</th>
+                    <th scope="col">Song Name</th>
+                    <th scope="col">Artist Name(s)</th>
+                    <th scope="col">Runtime</th>
+                    <th scope="col">Added By</th>
+                </tr>
+            </thead>
+            <tbody id="queue-body">
+            </tbody>
+        </table>
+        <form>
+            <div class="md-form mb-4" id="add-songs">
+            </div>
+            <button type="submit" class="btn add-song-button" id="search-button">Add More Songs</button>
+            <div class="autocomplete-results" id ="autocomplete-results">
+            </div>
+        </form>
+    </script>
+
+    <script id="oauth-template" type="text/x-handlebars-template">
+      <!-- <h2>oAuth info</h2>
+      <dl class="dl-horizontal">
+        <dt>Access token</dt><dd class="text-overflow">{{access_token}}</dd>
+        <dt>Refresh token</dt><dd class="text-overflow">{{refresh_token}}</dd> -->
+      </dl>
+    </script>
+
+    <script src="//cdnjs.cloudflare.com/ajax/libs/handlebars.js/2.0.0-alpha.1/handlebars.min.js"></script>
+    <script src="http://code.jquery.com/jquery-1.10.1.min.js"></script>
+    <script>
+      (function() {
+
+        /**
+         * Obtains parameters from the hash of the URL
+         * @return Object
+         */
+        function getHashParams() {
+          var hashParams = {};
+          var e, r = /([^&;=]+)=?([^&;]*)/g,
+              q = window.location.hash.substring(1);
+          while ( e = r.exec(q)) {
+             hashParams[e[1]] = decodeURIComponent(e[2]);
+          }
+          return hashParams;
+        }
+
+        var playlistArr;
+        var queue = [];
+        var isSearchbarOut = false;
+
+        //The templates for the different "pages" of the website
+        var queueSource = document.getElementById('queue-template').innerHTML,
+            queueTemplate = Handlebars.compile(queueSource),
+            queuePlaceholder = document.getElementById('queue');
+
+        var genPlaylistSource = document.getElementById('generate-playlist-template').innerHTML,
+            genPlaylistTemplate = Handlebars.compile(genPlaylistSource),
+            genPlaylistPlaceholder = document.getElementById('generate-playlist');
+
+        var oauthSource = document.getElementById('oauth-template').innerHTML,
+            oauthTemplate = Handlebars.compile(oauthSource),
+            oauthPlaceholder = document.getElementById('oauth');
+
+        var params = getHashParams();
+
+        var access_token = params.access_token,
+            refresh_token = params.refresh_token,
+            error = params.error;
+
+        if (error) {
+          alert('There was an error during the authentication');
+        } else {
+          if (access_token) {
+            // render oauth info
+            oauthPlaceholder.innerHTML = oauthTemplate({
+              access_token: access_token,
+              refresh_token: refresh_token
+            });
+
+            //query to get initial data based on users information
+            $.ajax({
+                url: 'https://api.spotify.com/v1/me',
+                headers: {
+                  'Authorization': 'Bearer ' + access_token
+                },
+                success: function(response) {
+                    callPlaylists(response.display_name, response.href);
+                }
+            });
+          } else {
+              // render initial screen
+              $('#login').show();
+              $('#loggedin').hide();
+          }          
+
+        //gets the users playlists
+        function callPlaylists(display_name, href){
+            var playlisturl = href + '/playlists'
+            var display = { "display_name": display_name };
+            $.ajax({
+                url: playlisturl,
+                headers: {
+                    'Authorization': 'Bearer ' + access_token
+                },
+                success: function(response) {
+                    playlistArr = response.items;
+                    var playlistData = {"display_name": display_name, "playlists": playlistArr};
+                    genPlaylistPlaceholder.innerHTML = genPlaylistTemplate(playlistData);
+                    //switches layouts to loggedin layout
+                    $('#login').hide();
+                    $('#loggedin').show();
+                    showPlaylists(playlistData);
+                }
+            });
+        }
+        //shows the users playlists and gives them ability to open a new queue on click
+        function showPlaylists(data){
+            var parentDiv = document.getElementById("parentDiv");
+            var length = data.playlists.length;
+            for(let i = 0; i < length; i++){
+                var name = document.createElement("div");
+                name.id = "playlist";
+                name.addEventListener('click', function(){
+                    showSongs(data.playlists[i].name, data.playlists[i].id);
+                })
+                name.className = "playlist-name";
+                name.innerHTML = data.playlists[i].name;
+                parentDiv.appendChild(name); 
+            }
+            document.getElementById('playlist-button').addEventListener('click', function(){
+                showSongs("", "");
+            });
+        }
+
+        //get all the songs in a given playlist
+        function showSongs(name, id){
+            var playlist_name = name;
+            if(name.length == 0){
+                playlist_name = "Group Aux Playlist";
+            }else{
+                //query all the songs in the playlist
+                var queryUrl = 'https://api.spotify.com/v1/playlists/' + id + '/tracks';
+                $.ajax({
+                    url: queryUrl,
+                    headers: {
+                        'Authorization': 'Bearer ' + access_token
+                    },
+                    success: function(response) {
+                        var length = response.items.length;
+                        var parentDiv = document.getElementById("queue-body");
+                        for(let i = 0; i < length; i++){
+                            //create new row object
+                            var curRow = document.createElement("tr");
+                            curRow.className = "queue-table-row";
+                            var position = document.createElement("th");
+                            position.scope = "row";
+                            position.innerHTML = i+1;
+                            curRow.appendChild(position);
+                            //calculate song-data and add to queue object
+                            var artists = getArtists(response.items[i].track);
+                            var runTime = convertMs(response.items[i].track.duration_ms);
+                            var song = {"song_name": response.items[i].track.name,
+                                        "artist_name": artists,
+                                        "runtime": runTime,
+                                        "added_by": response.items[i].added_by.id};
+                            queue.push(song);
+                            //Add song-data to table
+                            var song_name = document.createElement("td");
+                            song_name.innerHTML = response.items[i].track.name;
+                            var artist_name = document.createElement("td");
+                            artist_name.innerHTML = artists;
+                            var runtime = document.createElement("td");
+                            runtime.innerHTML = runTime;
+                            var added_by = document.createElement("td");
+                            added_by.innerHTML = response.items[i].added_by.id;
+                            curRow.appendChild(song_name);
+                            curRow.appendChild(artist_name);
+                            curRow.appendChild(runtime);
+                            curRow.appendChild(added_by);
+                            parentDiv.appendChild(curRow);
+                        }
+
+                    }
+                });
+            }
+            //display queue screen
+            let playlistJSON = {"playlist_name": playlist_name};
+            queuePlaceholder.innerHTML = queueTemplate(playlistJSON);
+            $('#loggedin').hide();
+            $('#main-queue').show();
+            document.getElementById('search-button').addEventListener('click', function(){
+                //Open searchbar to allow for searching
+                if(!isSearchbarOut){
+                    var addSongsWrapper = document.getElementById('add-songs');
+                    var searchbar = document.createElement("input");
+                    var button = document.getElementById('search-button');
+                    button.innerHTML = "Add Song";
+                    searchbar.className = "form-control-underlined";
+                    searchbar.id = "song-searchbar";
+                    searchbar.type = "text";
+                    searchbar.placeholder = "Search For A Song";
+                    searchbar.addEventListener('input', function(){
+                        autocompleteSearch(searchbar.value);
+                    });
+                    addSongsWrapper.appendChild(searchbar);
+                    addSongsWrapper.appendChild(button);
+                    isSearchbarOut = true;
+                }else{
+                    //otherwise attempt to add the song to the queue
+                    console.log("adding " + searchbar.value + " to queue");
+                }
+            });
+        }
+
+        //called whenever add-song field is updated, queries to find all results and shows them
+        function autocompleteSearch(text){
+            //first convert string to something able to be queried for(remove spaces with +)
+            for(let x = 0; x < text.length; x++){
+                if(text.charAt(x) == ' '){
+                    text = text.substring(0, x) + "%20" + text.substring(x+1);
+                }
+            }
+            //query for all tracks matching text
+            var queryUrl = "https://api.spotify.com/v1/search?q=" + text + "&type=track";
+            $.ajax({
+                url: queryUrl,
+                headers: {
+                    'Authorization': 'Bearer ' + access_token
+                },
+                success: function(response) {
+                    console.log(response.tracks.items);
+                    displayAutocompleteTracks(response.tracks.items);
+                    //display all tracks under searchbar
+                }
+            });
+        }
+
+        //show the autocomplete results under searchbar
+        function displayAutocompleteTracks(items){
+            var parentDiv = document.getElementById('autocomplete-results');
+            //delete previous search results
+            while(parentDiv.firstChild){
+                parentDiv.removeChild(parentDiv.firstChild);
+            }
+            //loop through each track and display the information
+            for(var i = 0; i < items.length; i++){
+                var data = items[i].name + " - " + getArtists(items[i]);
+                var song = document.createElement("div");
+                song.innerHTML = data;
+                parentDiv.append(song);
+            }
+        }
+
+        //gets the artists on a given song(could be multiple, seperate with ',')
+        function getArtists(trackInfo){
+            if(trackInfo.artists.length > 1){
+                var artist = trackInfo.artists[0].name;
+                for(var i = 1; i < trackInfo.artists.length; i++){
+                    artist += ', ' + trackInfo.artists[i].name;
+                }
+                return artist;
+            }else{
+                return trackInfo.artists[0].name;
+            }
+        }
+
+        //converts runtime in ms to MM:SS format
+        function convertMs(milliseconds){
+            var time;
+            var numMin = Math.floor(milliseconds/60000);
+            var numSec = "" + ((milliseconds - numMin*60000)/100000).toFixed(2);
+            time = numMin + ':' + numSec.substring(2);
+            return time;
+        }
+
+        //   document.getElementById('obtain-new-token').addEventListener('click', function() {
+        //     $.ajax({
+        //       url: '/refresh_token',
+        //       data: {
+        //         'refresh_token': refresh_token
+        //       }
+        //     }).done(function(data) {
+        //       access_token = data.access_token;
+        //       oauthPlaceholder.innerHTML = oauthTemplate({
+        //         access_token: access_token,
+        //         refresh_token: refresh_token
+        //       });
+        //     });
+        //   }, false);
+        }
+      })();
+    </script>
+  </body>
+</html>
