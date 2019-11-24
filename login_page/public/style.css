@@ -83,3 +83,15 @@ input[type=text]{
 input:focus{
     outline-width: 0px;
 }
+
+.not-pressed{
+    color: #b3b3b3 !important;
+}
+
+.icon-thumbs-down{
+    color: red;
+}
+
+.icon-thumbs-up{
+    color: #1db954;
+}
