@@ -51,7 +51,6 @@
                 <tr class="queue-table-row">
                     <th scope="col">Priority</th>
                     <th scope="col">Like</th>
-                    <th scope="col">Dislike</th>
                     <th scope="col">Song Name</th>
                     <th scope="col">Artist Name(s)</th>
                     <th scope="col">Runtime</th>
@@ -74,8 +73,8 @@
       <!-- <h2>oAuth info</h2>
       <dl class="dl-horizontal">
         <dt>Access token</dt><dd class="text-overflow">{{access_token}}</dd>
-        <dt>Refresh token</dt><dd class="text-overflow">{{refresh_token}}</dd> -->
-      </dl>
+        <dt>Refresh token</dt><dd class="text-overflow">{{refresh_token}}</dd>
+      </dl> -->
     </script>
 
     <script src="//cdnjs.cloudflare.com/ajax/libs/handlebars.js/2.0.0-alpha.1/handlebars.min.js"></script>
@@ -102,7 +101,6 @@
         // song {
         //     string priority,
         //     boolean liked;
-        //     boolean disliked;
         //     string artist_name,
         //     string song_name,
         //     string runtime,
@@ -114,7 +112,8 @@
         //temp songIds for 
         var songIds = [];
         var songId = "";
-        var userId;        
+        var userId;    
+        var playlist_id;    
 
         //The templates for the different "pages" of the website
         var queueSource = document.getElementById('queue-template').innerHTML,
@@ -153,7 +152,7 @@
                 },
                 success: function(response) {
                     userId = response.display_name;
-                    callPlaylists(response.display_name, response.href);
+                    callPlaylists(userId, response.href);
                 }
             });
           } else {
@@ -203,9 +202,27 @@
 
         //get all the songs in a given playlist
         function showSongs(name, id){
+            playlist_id = id;
             var playlist_name = name;
             if(name.length == 0){
-                playlist_name = "Group Aux Playlist";
+                playlist_name = "Jukebaux Playlist"
+                var queryUrl = 'https://cors-anywhere.herokuapp.com/https://api.spotify.com/v1/users/' + userId + '/playlists';
+                $.ajax({
+                    url: queryUrl,
+                    headers: {
+                        'Authorization': 'Bearer ' + access_token
+                    },
+                    contentType: 'application/json',
+                    data: {"name": playlist_name},
+                    dataType: 'json',
+                    type: 'POST',
+                    success: function(response) {
+                        console.log(response);
+                    },
+                    error: function(){
+                        console.log("error");
+                    }
+                });
             }else{
                 //query all the songs in the playlist
                 var queryUrl = 'https://api.spotify.com/v1/playlists/' + id + '/tracks';
@@ -222,7 +239,6 @@
                             var runTime = convertMs(response.items[i].track.duration_ms);
                             var song = {"priority": 1,
                                         "liked": false,
-                                        "disliked": false,
                                         "artist_name": artists,
                                         "song_name": response.items[i].track.name,
                                         "runtime": runTime,
@@ -230,7 +246,7 @@
                                         "song_id": response.items[i].track.id};
                             queue.push(song);
                         }
-                        refreshTable();
+                        sortQueue();
 
                     }
                 });
@@ -261,7 +277,6 @@
                     //otherwise attempt to add the song to the queue
                     var searchbar = document.getElementById("song-searchbar");
                     addToQueue();
-                    console.log("adding " + searchbar.value + " to queue");
                 }
             });
         }
@@ -326,17 +341,55 @@
         //get the track that was requested, and add to queue
         function addToQueue(){
             if(songId != ""){
-                var queryUrl = "https://api.spotify.com/v1/tracks/" + songId;
-                $.ajax({
-                    url: queryUrl,
-                    headers: {
-                        'Authorization': 'Bearer ' + access_token
-                    },
-                    success: function(response) {
-                        addToTable(response, songId);
-                    }
-                });
+                var isDuplicate = checkIfDuplicate();
+                if(!isDuplicate){
+                    var queryUrl = "https://api.spotify.com/v1/tracks/" + songId;
+                    $.ajax({
+                        url: queryUrl,
+                        headers: {
+                            'Authorization': 'Bearer ' + access_token
+                        },
+                        success: function(response) {
+                            addToPlaylist(response.uri);
+                            addToTable(response, songId);
+                        }
+                    });
+                }else{
+                    alterPriority(songId, 1);
+                }
+            }else{
+                console.log("not a valid track, please select a track from the searchbar");
             }
+        }
+
+        //check queue to see if song picked has already been requested
+        function checkIfDuplicate(){
+            var found = false;
+            var index = 0;
+            while(!found && index < queue.length){
+                if(queue[index].song_id == songId){
+                    found = true;
+                    return found;
+                }
+                index++;
+            }
+            return found;
+        }
+
+        function addToPlaylist(songUri){
+            queryUrl = "https://api.spotify.com/v1/playlists/" + songUri + "/tracks";
+            $.ajax({
+                url: queryUrl,
+                headers: {
+                    'Authorization': 'Bearer ' + access_token,
+                    'Content Type': 'application/json'
+                },
+                type: 'POST',
+                data: {"uris": songUri},
+                success: function(response) {
+                    console.log("yay");
+                }
+            });
         }
 
         //put the added song into the table 
@@ -346,14 +399,13 @@
             var runTime = convertMs(songData.duration_ms);
             var song = {"priority": 1,
                         "liked": true,
-                        "dislike": false,
                         "artist_name": artists,
                         "song_name": songData.name,
                         "runtime": runTime,
                         "added_by": userId,
                         "song_id": songId};
             queue.push(song);
-            refreshTable();
+            sortQueue();
         }
 
         //update song based on upvote/downvote
@@ -370,23 +422,49 @@
             var curRow = document.getElementsByClassName("queue-table-row")[index];
             index--;
             //if it was upvote, make thumbs-up green if not already liked
+            //also works to prevent user queuing same song a bunch of times, can only upvote/add once
             if(val > 0 && !queue[index].liked){
                 queue[index].priority += val;
                 curRow.children[1].children[0].className = "icon-thumbs-up";
-                curRow.children[2].children[0].className = "icon-thumbs-down not-pressed";
-                queue[index].disliked = false;
                 queue[index].liked = true;
-                //call function to refresh table
-                refreshTable();
-            }else if(val < 0 && !queue[index].disliked){
+                //call function to resort queue based on priority
+                sortQueue();
+            }else if(val < 0 && queue[index].liked){
                 queue[index].priority += val;
                 curRow.children[1].children[0].className = "icon-thumbs-up not-pressed";
-                curRow.children[2].children[0].className = "icon-thumbs-down";   
-                queue[index].disliked = true;
                 queue[index].liked = false;
-                //call function to refresh table
-                refreshTable();
+                //call function to resort queue based on priority
+                sortQueue();
             }
+        }
+
+        //resorts the queue based on priority(high to low)
+        function sortQueue(){
+            //go through and find max val, append to front, then decrement max by 1 and find 
+            //all songs with priority equal to val-i. Continue and stop once you have the queue
+            //completely sorted(make a numSorted variable that keeps track of how many elements you move,
+            //and exit loop when numSorted==queue.length)
+            var maxVal = 0;
+            var numSorted = 0;
+            var tempQueue = [];
+            //first do a loop to find max value 
+            for(var i = 0; i < queue.length; i++){
+                if(queue[i].priority > maxVal){
+                    maxVal = queue[i].priority;
+                }
+            }
+            //now loop while decrementing maxVal and continue adding to tempQueue
+            while((numSorted < queue.length)){
+                for(var i = 0; i < queue.length; i++){
+                    if(queue[i].priority == maxVal){
+                        tempQueue.push(queue[i]);
+                        numSorted++;
+                    }
+                }
+                maxVal--;
+            }
+            queue = tempQueue;
+            refreshTable();
         }
 
         //refresh the table based on changed priorities and added/removed tracks
@@ -410,24 +488,16 @@
                 }else{
                     thumbsUp.className = "icon-thumbs-up not-pressed";
                 }
-                var thumbsDown = document.createElement("i");
-                if(queue[i].disliked){
-                    thumbsDown.className = "icon-thumbs-down";
-                }else{
-                    thumbsDown.className = "icon-thumbs-down not-pressed";
-                }
                 thumbsUp.addEventListener('click', function(){
+                    if(!queue[i].liked){
                     alterPriority(queue[i].song_id, 1);
-                })
-                thumbsDown.addEventListener('click', function(){                 
-                    alterPriority(queue[i].song_id, -1);
+                    }else{
+                        alterPriority(queue[i].song_id, -1);
+                    }
                 })
                 var like = document.createElement("td");
                 like.appendChild(thumbsUp);
-                var dislike = document.createElement("td");
-                dislike.appendChild(thumbsDown);
                 curRow.appendChild(like);
-                curRow.appendChild(dislike);
                 var song_name = document.createElement("td");
                 song_name.innerHTML = queue[i].song_name;
                 var artist_name = document.createElement("td");
