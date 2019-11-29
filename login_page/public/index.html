@@ -106,6 +106,8 @@
         //     string runtime,
         //     string added_by,
         //     string songId,
+        //     int last_pos
+        //     boolean pos_changed,
         // }
         var queue = [];
         var isSearchbarOut = false;
@@ -114,6 +116,7 @@
         var songId = "";
         var userId;    
         var playlist_id;    
+        var old_index;
 
         //The templates for the different "pages" of the website
         var queueSource = document.getElementById('queue-template').innerHTML,
@@ -202,28 +205,10 @@
 
         //get all the songs in a given playlist
         function showSongs(name, id){
-            playlist_id = id;
-            var playlist_name = name;
             if(name.length == 0){
-                playlist_name = "Jukebaux Playlist"
-                var queryUrl = 'https://cors-anywhere.herokuapp.com/https://api.spotify.com/v1/users/' + userId + '/playlists';
-                $.ajax({
-                    url: queryUrl,
-                    headers: {
-                        'Authorization': 'Bearer ' + access_token
-                    },
-                    contentType: 'application/json',
-                    data: {"name": playlist_name},
-                    dataType: 'json',
-                    type: 'POST',
-                    success: function(response) {
-                        console.log(response);
-                    },
-                    error: function(){
-                        console.log("error");
-                    }
-                });
+                createPlaylist(false, "Jukebaux Playlist"); 
             }else{
+                var playlist_name = name;
                 //query all the songs in the playlist
                 var queryUrl = 'https://api.spotify.com/v1/playlists/' + id + '/tracks';
                 $.ajax({
@@ -233,7 +218,8 @@
                     },
                     success: function(response) {
                         var length = response.items.length;
-                        for(let i = 0; i < length; i++){                            
+                        playlist_id = id;     
+                        for(let i = 0; i < length; i++){        
                             //calculate song-data and add to queue object
                             var artists = getArtists(response.items[i].track);
                             var runTime = convertMs(response.items[i].track.duration_ms);
@@ -243,11 +229,13 @@
                                         "song_name": response.items[i].track.name,
                                         "runtime": runTime,
                                         "added_by": response.items[i].added_by.id,
-                                        "song_id": response.items[i].track.id};
+                                        "song_id": response.items[i].track.id,
+                                        "last_pos": i,
+                                        "pos_changed": false};
                             queue.push(song);
                         }
+                        //createPlaylist(true, playlist_name);
                         sortQueue();
-
                     }
                 });
             }
@@ -276,7 +264,55 @@
                 }else{
                     //otherwise attempt to add the song to the queue
                     var searchbar = document.getElementById("song-searchbar");
-                    addToQueue();
+                    addToQueue(false);
+                }
+            });
+        }
+
+        function createPlaylist(copy, playlist_name){
+            var queryUrl = 'https://cors-anywhere.herokuapp.com/https://api.spotify.com/v1/users/' + userId + '/playlists';
+            var jsonData = {"name": playlist_name};
+            $.ajax({
+                type: 'POST',
+                url: queryUrl,
+                data: JSON.stringify(jsonData),
+                dataType: 'json',
+                headers: {
+                    'Authorization': 'Bearer ' + access_token
+                },
+                contentType: 'application/json',
+                success: function(response) {
+                    console.log(response);
+                    playlist_id = response.id;
+                    //if a copy, then copy over all the tracks from the queue to the playlist
+                    //TODO Implement and find a faster way to copy over all the songs
+                    // if(copy){
+                    //     var Uris = [];
+                    //     var i = 0;
+                    //     while(i < queue.length){
+                    //         var queryUrl = "https://api.spotify.com/v1/tracks/" + queue[i].song_id;
+                    //         $.ajax({
+                    //             url: queryUrl,
+                    //             headers: {
+                    //                 'Authorization': 'Bearer ' + access_token
+                    //             },
+                    //             success: function(response) {
+                    //                 console.log(response.uri);
+                    //                 Uris.push(response.uri);
+                    //                 i++;
+                    //             },
+                    //             error: function(){
+                    //                 i++;
+                    //             }
+                    //         });
+                    //     }
+                    //     console.log(Uris);
+                    //     //addToPlaylist(Uris);
+                    //     //refreshTable();
+                    // }
+                },
+                error: function(){
+                    console.log("error");
                 }
             });
         }
@@ -338,22 +374,36 @@
             }
         }
 
+        function getTrack(){
+            var queryUrl = "https://api.spotify.com/v1/tracks/" + songId;
+            $.ajax({
+                url: queryUrl,
+                headers: {
+                    'Authorization': 'Bearer ' + access_token
+                },
+                success: function(response) {
+                    console.log(response.uri);
+                    if(response.uri != ""){
+                        var uArr = [];
+                        uArr.push(response.uri);
+                        addToPlaylist(uArr);
+                        addToTable(response, songId);
+                    }
+                    return response;
+                },
+                error: (error) => {
+                    console.log(JSON.stringify(error));
+                    return "";
+                }
+            });
+        }
+
         //get the track that was requested, and add to queue
-        function addToQueue(){
+        function addToQueue(initial){
             if(songId != ""){
                 var isDuplicate = checkIfDuplicate();
-                if(!isDuplicate){
-                    var queryUrl = "https://api.spotify.com/v1/tracks/" + songId;
-                    $.ajax({
-                        url: queryUrl,
-                        headers: {
-                            'Authorization': 'Bearer ' + access_token
-                        },
-                        success: function(response) {
-                            addToPlaylist(response.uri);
-                            addToTable(response, songId);
-                        }
-                    });
+                if(!isDuplicate || initial){
+                    getTrack();
                 }else{
                     alterPriority(songId, 1);
                 }
@@ -376,16 +426,16 @@
             return found;
         }
 
-        function addToPlaylist(songUri){
-            queryUrl = "https://api.spotify.com/v1/playlists/" + songUri + "/tracks";
+        function addToPlaylist(uriArr){
+            queryUrl = "https://api.spotify.com/v1/playlists/" + playlist_id + "/tracks";
             $.ajax({
                 url: queryUrl,
                 headers: {
                     'Authorization': 'Bearer ' + access_token,
-                    'Content Type': 'application/json'
                 },
+                contentType: 'application/json',
                 type: 'POST',
-                data: {"uris": songUri},
+                data: JSON.stringify({"uris": uriArr}),
                 success: function(response) {
                     console.log("yay");
                 }
@@ -403,7 +453,9 @@
                         "song_name": songData.name,
                         "runtime": runTime,
                         "added_by": userId,
-                        "song_id": songId};
+                        "song_id": songId,
+                        "last_pos": queue.length,
+                        "pos_changed": false};
             queue.push(song);
             sortQueue();
         }
@@ -416,6 +468,9 @@
             while(!found && index < queue.length){
                 if(queue[index].song_id == songId){
                     found = true;
+                    //mark that the position of this song is going to change
+                    queue[index].pos_changed = true;
+                    old_index = index;
                 }
                 index++;
             }
@@ -464,7 +519,46 @@
                 maxVal--;
             }
             queue = tempQueue;
+            refreshPlaylist();
             refreshTable();
+        }
+
+        //Alter playlist to match the queue
+        function refreshPlaylist(){
+            var queryUrl = "https://api.spotify.com/v1/playlists/" + playlist_id + "/tracks";
+            //loop through queue and find which song was changed, then update pos
+            for(var i = 0; i < queue.length; i++){
+                //if the position in the queue was changed, then move it in the playlist too
+                if(queue[i].pos_changed){
+                    queue[i].pos_changed = false;
+                    console.log(queue[i]);
+                    var jsonData = {"range_start": queue[i].last_pos, "insert_before": i};
+                    $.ajax({
+                        type: 'PUT',
+                        url: queryUrl,
+                        data: JSON.stringify(jsonData),
+                        dataType: 'json',
+                        headers: {
+                            'Authorization': 'Bearer ' + access_token
+                        },
+                        contentType: 'application/json',
+                        success: function(response) {
+                            console.log("success");
+                            resetQueuePositions();
+                        },
+                        error: function(){
+                            console.log("error");
+                        }
+                    });
+                }
+            }
+        }
+
+        //reset the queue based on the updated priorities
+        function resetQueuePositions(){
+            for(var i = 0; i < queue.length; i++){
+                queue[i].last_pos = i;
+            }
         }
 
         //refresh the table based on changed priorities and added/removed tracks
