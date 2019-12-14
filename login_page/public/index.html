@@ -21,7 +21,7 @@
   <body style="background-color: #212121">
     <div>
       <div id="login" class="login-page">
-        <h1 class="login-text">Log In To Start The Party!</h1>
+        <h1 class="login-text">Log In To Start The Jukebaux!</h1>
         <a href="/login" class="btn login-button">Log in with Spotify</a>
       </div>
       <div id="loggedin">
@@ -31,21 +31,36 @@
         </div>
         <!-- <button class="btn btn-default" id="obtain-new-token">Obtain new token using the refresh token</button> -->
       </div>
+      <div id="room-page" class="queue-page">
+          <div id="room">
+          </div>
+      </div>
       <div id="main-queue">
         <div id="queue" class="queue-page">
         </div>
       </div>
     </div>
 
+    <script id="create-or-join-room-template" type="text/x-handlebars-template">
+        <h1 class="login-text">Logged in as {{display_name}}</h1>
+        <h4 class="login-subtitle-text">Current Playlists</h4>  
+        <!-- <h4 class="login-subtitle-text">Create or Join a Room to Start The Party"></h4>
+        <input type="button" class="btn login-button" id="playlist-button" value="Create Room"/>
+        <input type="button" class="btn login-button" id="playlist-button" value="Join Room"/> -->
+    </script>
+
+
+
     <script id="generate-playlist-template" type="text/x-handlebars-template">
       <h1 class="login-text">Logged in as {{display_name}}</h1>
       <h4 class="login-subtitle-text">Current Playlists</h4>
       <div id="parentDiv"></div>
-      <button class="btn login-button" id="playlist-button">Create New Playlist</button>
+      <input type="button" class="btn login-button" id="playlist-button" value="Create New Playlist"/>
     </script>
 
     <script id="queue-template" type="text/x-handlebars-template">
-        <h1 class="login-text">Songs in queue for "{{playlist_name}}"</h1>
+        <h1 class="login-text">Songs in queue for {{playlist_name}}</h1>
+        <h4 class="login-text">Room ID: {{room_id}}</h4>
         <table class="table" width="50%">
             <thead>
                 <tr class="queue-table-row">
@@ -63,7 +78,7 @@
         <form>
             <div class="md-form mb-4" id="add-songs">
             </div>
-            <button type="submit" class="btn add-song-button" id="search-button">Add More Songs</button>
+            <input type="button" class="btn add-song-button" id="search-button" value="Add More Songs"/>
             <div class="autocomplete-results" id ="autocomplete-results">
             </div>
         </form>
@@ -81,7 +96,6 @@
     <script src="http://code.jquery.com/jquery-1.10.1.min.js"></script>
     <script>
       (function() {
-
         /**
          * Obtains parameters from the hash of the URL
          * @return Object
@@ -110,6 +124,7 @@
         //     boolean pos_changed,
         // }
         var queue = [];
+        var playingSongId = "";
         var isSearchbarOut = false;
         //temp songIds for 
         var songIds = [];
@@ -117,11 +132,17 @@
         var userId;    
         var playlist_id;    
         var old_index;
+        var uriToRemove;
+        var loggedin = false;
 
         //The templates for the different "pages" of the website
         var queueSource = document.getElementById('queue-template').innerHTML,
             queueTemplate = Handlebars.compile(queueSource),
             queuePlaceholder = document.getElementById('queue');
+
+        var roomSource = document.getElementById("create-or-join-room-template").innerHTML,
+            roomTemplate = Handlebars.compile(roomSource),
+            roomPlaceholder = document.getElementById('room');
 
         var genPlaylistSource = document.getElementById('generate-playlist-template').innerHTML,
             genPlaylistTemplate = Handlebars.compile(genPlaylistSource),
@@ -156,6 +177,11 @@
                 success: function(response) {
                     userId = response.display_name;
                     callPlaylists(userId, response.href);
+                    if(!loggedin){
+                        $('#login').hide();
+                        $('#loggedin').show();
+                        loggedin = true;
+                    }
                 }
             });
           } else {
@@ -178,8 +204,6 @@
                     var playlistData = {"display_name": display_name, "playlists": playlistArr};
                     genPlaylistPlaceholder.innerHTML = genPlaylistTemplate(playlistData);
                     //switches layouts to loggedin layout
-                    $('#login').hide();
-                    $('#loggedin').show();
                     showPlaylists(playlistData);
                 }
             });
@@ -234,19 +258,39 @@
                                         "pos_changed": false};
                             queue.push(song);
                         }
+                        playingSongId = queue[0].song_id;
                         //createPlaylist(true, playlist_name);
                         sortQueue();
                     }
                 });
             }
+            var roomId = Math.round(Math.random()*9999);
+            console.log(roomId);
             //display queue screen
-            let playlistJSON = {"playlist_name": playlist_name};
+            let playlistJSON = {"playlist_name": playlist_name, "room_id": roomId};
             queuePlaceholder.innerHTML = queueTemplate(playlistJSON);
             $('#loggedin').hide();
             $('#main-queue').show();
+            //every 5 seconds, check the current playing song and update the queue
+            setInterval(function(){
+                        var queryUrl = "https://api.spotify.com/v1/me/player/currently-playing";
+                        $.ajax({
+                            url: queryUrl,
+                            headers: {
+                                'Authorization': 'Bearer ' + access_token
+                            },
+                            success: function(response) {
+                                checkIfNewSong(response.item);
+                            },
+                            error: (error) => {
+                                console.log(JSON.stringify(error));
+                                return "";
+                            }
+                        });
+            }, 5000);
             document.getElementById('search-button').addEventListener('click', function(){
-                //Open searchbar to allow for searching
-                if(!isSearchbarOut){
+                if(isSearchbarOut == false){
+                    //open the searchbar
                     var addSongsWrapper = document.getElementById('add-songs');
                     var searchbar = document.createElement("input");
                     var button = document.getElementById('search-button');
@@ -254,6 +298,7 @@
                     searchbar.className = "form-control-underlined";
                     searchbar.id = "song-searchbar";
                     searchbar.type = "text";
+                    searchbar.autocomplete = "new-password";
                     searchbar.placeholder = "Search For A Song";
                     searchbar.addEventListener('input', function(){
                         autocompleteSearch(searchbar.value);
@@ -283,33 +328,7 @@
                 contentType: 'application/json',
                 success: function(response) {
                     console.log(response);
-                    playlist_id = response.id;
-                    //if a copy, then copy over all the tracks from the queue to the playlist
-                    //TODO Implement and find a faster way to copy over all the songs
-                    // if(copy){
-                    //     var Uris = [];
-                    //     var i = 0;
-                    //     while(i < queue.length){
-                    //         var queryUrl = "https://api.spotify.com/v1/tracks/" + queue[i].song_id;
-                    //         $.ajax({
-                    //             url: queryUrl,
-                    //             headers: {
-                    //                 'Authorization': 'Bearer ' + access_token
-                    //             },
-                    //             success: function(response) {
-                    //                 console.log(response.uri);
-                    //                 Uris.push(response.uri);
-                    //                 i++;
-                    //             },
-                    //             error: function(){
-                    //                 i++;
-                    //             }
-                    //         });
-                    //     }
-                    //     console.log(Uris);
-                    //     //addToPlaylist(Uris);
-                    //     //refreshTable();
-                    // }
+                    playlist_id = response.id;            
                 },
                 error: function(){
                     console.log("error");
@@ -382,7 +401,6 @@
                     'Authorization': 'Bearer ' + access_token
                 },
                 success: function(response) {
-                    console.log(response.uri);
                     if(response.uri != ""){
                         var uArr = [];
                         uArr.push(response.uri);
@@ -426,6 +444,7 @@
             return found;
         }
 
+        //add the song to the spotify playlist
         function addToPlaylist(uriArr){
             queryUrl = "https://api.spotify.com/v1/playlists/" + playlist_id + "/tracks";
             $.ajax({
@@ -437,7 +456,6 @@
                 type: 'POST',
                 data: JSON.stringify({"uris": uriArr}),
                 success: function(response) {
-                    console.log("yay");
                 }
             });
         }
@@ -455,8 +473,9 @@
                         "added_by": userId,
                         "song_id": songId,
                         "last_pos": queue.length,
-                        "pos_changed": false};
+                        "pos_changed": true};
             queue.push(song);
+            playingSongId = queue[0].song_id;
             sortQueue();
         }
 
@@ -469,6 +488,7 @@
                 if(queue[index].song_id == songId){
                     found = true;
                     //mark that the position of this song is going to change
+                    console.log(index);
                     queue[index].pos_changed = true;
                     old_index = index;
                 }
@@ -476,20 +496,22 @@
             }
             var curRow = document.getElementsByClassName("queue-table-row")[index];
             index--;
-            //if it was upvote, make thumbs-up green if not already liked
-            //also works to prevent user queuing same song a bunch of times, can only upvote/add once
-            if(val > 0 && !queue[index].liked){
-                queue[index].priority += val;
-                curRow.children[1].children[0].className = "icon-thumbs-up";
-                queue[index].liked = true;
-                //call function to resort queue based on priority
-                sortQueue();
-            }else if(val < 0 && queue[index].liked){
-                queue[index].priority += val;
-                curRow.children[1].children[0].className = "icon-thumbs-up not-pressed";
-                queue[index].liked = false;
-                //call function to resort queue based on priority
-                sortQueue();
+            if(index != 0){
+                //if it was upvote, make thumbs-up green if not already liked
+                //also works to prevent user queuing same song a bunch of times, can only upvote/add once
+                if(val > 0 && !queue[index].liked){
+                    queue[index].priority += val;
+                    curRow.children[1].children[0].className = "icon-thumbs-up";
+                    queue[index].liked = true;
+                    //call function to resort queue based on priority
+                    sortQueue();
+                }else if(val < 0 && queue[index].liked){
+                    queue[index].priority += val;
+                    curRow.children[1].children[0].className = "icon-thumbs-up not-pressed";
+                    queue[index].liked = false;
+                    //call function to resort queue based on priority
+                    sortQueue();
+                }
             }
         }
 
@@ -500,17 +522,19 @@
             //completely sorted(make a numSorted variable that keeps track of how many elements you move,
             //and exit loop when numSorted==queue.length)
             var maxVal = 0;
-            var numSorted = 0;
+            var numSorted = 1;
             var tempQueue = [];
+            //always keep front element in front
+            tempQueue.push(queue[0]);
             //first do a loop to find max value 
-            for(var i = 0; i < queue.length; i++){
+            for(var i = 1; i < queue.length; i++){
                 if(queue[i].priority > maxVal){
                     maxVal = queue[i].priority;
                 }
             }
             //now loop while decrementing maxVal and continue adding to tempQueue
             while((numSorted < queue.length)){
-                for(var i = 0; i < queue.length; i++){
+                for(var i = 1; i < queue.length; i++){
                     if(queue[i].priority == maxVal){
                         tempQueue.push(queue[i]);
                         numSorted++;
@@ -519,6 +543,7 @@
                 maxVal--;
             }
             queue = tempQueue;
+            console.log(queue);
             refreshPlaylist();
             refreshTable();
         }
@@ -531,7 +556,7 @@
                 //if the position in the queue was changed, then move it in the playlist too
                 if(queue[i].pos_changed){
                     queue[i].pos_changed = false;
-                    console.log(queue[i]);
+                    console.log("move from position:" + queue[i].last_pos + " to position: " + i );
                     var jsonData = {"range_start": queue[i].last_pos, "insert_before": i};
                     $.ajax({
                         type: 'PUT',
@@ -605,6 +630,15 @@
                 curRow.appendChild(runtime);
                 curRow.appendChild(added_by);
                 parentDiv.appendChild(curRow);
+                //make highlighted green
+                if(i == 0){
+                    position.style.color = "#1db954";
+                    song_name.style.color = "#1db954";
+                    artist_name.style.color = "#1db954";
+                    runtime.style.color = "#1db954";
+                    added_by.style.color = "#1db954";
+                    playingSongId = queue[i].song_id;
+                }
             }
         }
 
@@ -628,6 +662,60 @@
             var numSec = "" + ((milliseconds - numMin*60000)/100000).toFixed(2);
             time = numMin + ':' + numSec.substring(2);
             return time;
+        }
+
+        //check if the song currently playing has changed, and if it has, then update the playlist and
+        //table/queue to move to the new song
+        function checkIfNewSong(songData){
+            if(playingSongId != ""){
+                if(songData.id != playingSongId){
+                    //get the uri to remove, then remove from spotify playlist
+                    getFirstSongUri();
+                    //delete old song from queue
+                    var tempQueue = [];
+                    for(var i = 1; i < queue.length; i++){
+                        tempQueue.push(queue[i]);
+                    }
+                    queue = tempQueue;
+                    for(var i = 0; i < queue.length; i++){
+                        queue[i].last_pos = queue[i].last_pos - 1;
+                    }
+                    refreshTable();
+                }
+            }
+        }
+
+        //get first songs uri, then call deleteFromPlaylist
+        function getFirstSongUri(){
+            var queryUrl = 'https://api.spotify.com/v1/playlists/' + playlist_id + '/tracks';
+                $.ajax({
+                    url: queryUrl,
+                    headers: {
+                        'Authorization': 'Bearer ' + access_token
+                    },
+                    success: function(response) {
+                        var uri = response.items[0].track.uri;
+                        var uriArr = [];
+                        var jsonData = {"uri": uri};
+                        uriArr.push(jsonData);
+                        deleteFromPlaylist(uriArr);
+                    }
+                });
+        }
+
+        function deleteFromPlaylist(uriArr){
+            queryUrl = "https://api.spotify.com/v1/playlists/" + playlist_id + "/tracks";
+            $.ajax({
+                url: queryUrl,
+                headers: {
+                    'Authorization': 'Bearer ' + access_token,
+                },
+                contentType: 'application/json',
+                type: 'DELETE',
+                data: JSON.stringify({"tracks": uriArr}),
+                success: function(response) {
+                }
+            });
         }
 
         //   document.getElementById('obtain-new-token').addEventListener('click', function() {
