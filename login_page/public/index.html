@@ -4,7 +4,7 @@
     <link rel="stylesheet" href="./style.css" /> 
     <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css">
     <link href="//netdna.bootstrapcdn.com/font-awesome/3.2.1/css/font-awesome.css" rel="stylesheet">
-    <title>Squad Aux - Listen And Queue Music With Friends</title>
+    <title>RQueue - Listen And Queue Music With Friends</title>
     <style type="text/css">
       #login, #loggedin {
         display: none;
@@ -21,11 +21,12 @@
   <body style="background-color: #212121">
     <div>
       <div id="login" class="login-page">
-        <h1 class="login-text">Log In To Start The Jukebaux!</h1>
-        <a href="/login" class="btn login-button">Log in with Spotify</a>
-      </div>
+        <h1 class="login-text">Log In To Create or Join a Party!</h1>
+        <a href="/login" class="btn login-button" id="spotify-login">Log in with Spotify</a>
+        <!-- <a class="btn login-button" id="spotify-login">Log in with Spotify</a> -->
+    </div>
       <div id="loggedin">
-        <div id="generate-playlist" class="queue-page">
+        <div id="create-room" class="queue-page">
         </div>
         <div id="oauth">
         </div>
@@ -41,21 +42,24 @@
       </div>
     </div>
 
-    <script id="create-or-join-room-template" type="text/x-handlebars-template">
+    <!-- <script id="create-or-join-room-template" type="text/x-handlebars-template">
         <h1 class="login-text">Logged in as {{display_name}}</h1>
         <h4 class="login-subtitle-text">Current Playlists</h4>  
-        <!-- <h4 class="login-subtitle-text">Create or Join a Room to Start The Party"></h4>
+        <h4 class="login-subtitle-text">Create or Join a Room to Start The Party"></h4>
         <input type="button" class="btn login-button" id="playlist-button" value="Create Room"/>
-        <input type="button" class="btn login-button" id="playlist-button" value="Join Room"/> -->
-    </script>
+        <input type="button" class="btn login-button" id="playlist-button" value="Join Room"/>
+    </script> -->
 
 
 
-    <script id="generate-playlist-template" type="text/x-handlebars-template">
+    <script id="create-or-join-room-template" type="text/x-handlebars-template">
       <h1 class="login-text">Logged in as {{display_name}}</h1>
-      <h4 class="login-subtitle-text">Current Playlists</h4>
+      <h4 class="login-subtitle-text">Create or Join a Room to Start The Party!</h4>
       <div id="parentDiv"></div>
-      <input type="button" class="btn login-button" id="playlist-button" value="Create New Playlist"/>
+      <input type="button" class="btn login-button" id="create-room-button" value="Create Room"/>
+      <input type="button" class="btn login-button" id="join-room-button" value="Join Room"/>
+      <div class="md-form mb-4" id="type-roomid">
+        </div>
     </script>
 
     <script id="queue-template" type="text/x-handlebars-template">
@@ -91,7 +95,7 @@
         <dt>Refresh token</dt><dd class="text-overflow">{{refresh_token}}</dd>
       </dl> -->
     </script>
-
+    <script type="/text/javascript/" src="../app.js"></script>
     <script src="//cdnjs.cloudflare.com/ajax/libs/handlebars.js/2.0.0-alpha.1/handlebars.min.js"></script>
     <script src="http://code.jquery.com/jquery-1.10.1.min.js"></script>
     <script>
@@ -107,8 +111,19 @@
           while ( e = r.exec(q)) {
              hashParams[e[1]] = decodeURIComponent(e[2]);
           }
+          console.log(hashParams);
           return hashParams;
         }
+
+        function generateRandomString(length) {
+            var text = '';
+            var possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+            for (var i = 0; i < length; i++) {
+                text += possible.charAt(Math.floor(Math.random() * possible.length));
+            }
+            return text;
+        };
 
         var playlistArr;
         //queue of song objects 
@@ -126,7 +141,7 @@
         var queue = [];
         var playingSongId = "";
         var isSearchbarOut = false;
-        //temp songIds for 
+        var isRoomFieldOut = false;
         var songIds = [];
         var songId = "";
         var userId;    
@@ -134,6 +149,8 @@
         var old_index;
         var uriToRemove;
         var loggedin = false;
+        var client_id = 'e3a9ee0df38642d591d70229cca7d58a'; // Your client id
+        var redirect_uri = 'http://localhost:8888/callback'; // Your redirect uri
 
         //The templates for the different "pages" of the website
         var queueSource = document.getElementById('queue-template').innerHTML,
@@ -144,15 +161,41 @@
             roomTemplate = Handlebars.compile(roomSource),
             roomPlaceholder = document.getElementById('room');
 
-        var genPlaylistSource = document.getElementById('generate-playlist-template').innerHTML,
+        var genPlaylistSource = document.getElementById('create-or-join-room-template').innerHTML,
             genPlaylistTemplate = Handlebars.compile(genPlaylistSource),
-            genPlaylistPlaceholder = document.getElementById('generate-playlist');
+            genPlaylistPlaceholder = document.getElementById('create-room');
 
         var oauthSource = document.getElementById('oauth-template').innerHTML,
             oauthTemplate = Handlebars.compile(oauthSource),
             oauthPlaceholder = document.getElementById('oauth');
 
         var params = getHashParams();
+        //attempt to bypass using app.js for authentication
+        var loginButton = document.getElementById('spotify-login').addEventListener('click', function(){
+            authenticateInfo();
+        })
+
+        function authenticateInfo(){
+            var state = generateRandomString(16);
+            var scope = 'user-read-private user-read-email playlist-modify-private ' + 
+                        'playlist-modify-public user-read-playback-state user-read-recently-played';
+            $.ajax({
+                url: 'https://accounts.spotify.com/authorize',
+                type: "get",
+                data: {
+                    client_id: client_id,
+                    response_type: 'code',
+                    redirect_uri: redirect_uri,
+                    scope: encodeURIComponent(scope),
+                    state: state,
+                },
+                success: function(response) {
+                    console.log(response);
+
+                }
+            });
+        }
+
 
         var access_token = params.access_token,
             refresh_token = params.refresh_token,
@@ -162,6 +205,7 @@
           alert('There was an error during the authentication');
         } else {
           if (access_token) {
+              console.log("test");
             // render oauth info
             oauthPlaceholder.innerHTML = oauthTemplate({
               access_token: access_token,
@@ -204,7 +248,30 @@
                     var playlistData = {"display_name": display_name, "playlists": playlistArr};
                     genPlaylistPlaceholder.innerHTML = genPlaylistTemplate(playlistData);
                     //switches layouts to loggedin layout
-                    showPlaylists(playlistData);
+                    document.getElementById('create-room-button').addEventListener('click', function(){
+                        showSongs("", "");
+                    });
+                    document.getElementById('join-room-button').addEventListener('click', function(){
+                        if(isRoomFieldOut == false){
+                            //open the textField
+                            var roomWrapper = document.getElementById('type-roomid');
+                            var roomField = document.createElement("input");
+                            var button = document.getElementById('join-room-button');
+                            button.innerHTML = "Connect to Room";
+                            roomField.className = "form-control-underlined";
+                            roomField.id = "room-textfield";
+                            roomField.type = "text";
+                            roomField.max = "4";
+                            roomField.style.width = "5%";
+                            roomField.style.marginRight = "8px";
+                            roomField.autocomplete = "new-password";
+                            roomField.placeholder = "Room ID";
+                            roomWrapper.appendChild(roomField);
+                            roomWrapper.appendChild(button);
+                            isRoomFieldOut = true;
+                        }
+                    });
+                    //showPlaylists(playlistData);
                 }
             });
         }
@@ -222,17 +289,38 @@
                 name.innerHTML = data.playlists[i].name;
                 parentDiv.appendChild(name); 
             }
-            document.getElementById('playlist-button').addEventListener('click', function(){
+            document.getElementById('create-room-button').addEventListener('click', function(){
                 showSongs("", "");
+            });
+            document.getElementById('join-room-button').addEventListener('click', function(){
+                if(isRoomFieldOut == false){
+                    //open the textField
+                    var roomWrapper = document.getElementById('type-roomid');
+                    var roomField = document.createElement("input");
+                    var button = document.getElementById('join-room-button');
+                    button.innerHTML = "Connect to Room";
+                    roomField.className = "form-control-underlined";
+                    roomField.id = "room-textfield";
+                    roomField.type = "text";
+                    roomField.max = "4";
+                    roomField.style.width = "15%";
+                    roomField.autocomplete = "new-password";
+                    roomField.placeholder = "Type in the Room ID";
+                    roomWrapper.appendChild(roomField);
+                    roomWrapper.appendChild(button);
+                    isRoomFieldOut = true;
+                }
             });
         }
 
         //get all the songs in a given playlist
         function showSongs(name, id){
+            var playlist_name;
             if(name.length == 0){
-                createPlaylist(false, "Jukebaux Playlist"); 
+                playlist_name = userId + "'s ouRQueue Playlist";
+                createPlaylist(false, "ouRQueue Playlist"); 
             }else{
-                var playlist_name = name;
+                playlist_name = name;
                 //query all the songs in the playlist
                 var queryUrl = 'https://api.spotify.com/v1/playlists/' + id + '/tracks';
                 $.ajax({
@@ -264,7 +352,7 @@
                     }
                 });
             }
-            var roomId = Math.round(Math.random()*9999);
+            var roomId = 1000 + Math.round(Math.random()*8999);
             console.log(roomId);
             //display queue screen
             let playlistJSON = {"playlist_name": playlist_name, "room_id": roomId};
