@@ -114,7 +114,6 @@
           while ( e = r.exec(q)) {
              hashParams[e[1]] = decodeURIComponent(e[2]);
           }
-          console.log(hashParams);
           return hashParams;
         }
 
@@ -142,10 +141,12 @@
         //     boolean pos_changed,
         // }
         var queue = [];
+        var queuePlaying = false;
         var playingSongId = "";
         var isSearchbarOut = false;
         var isRoomFieldOut = false;
         var songIds = [];
+        var songUris = [];
         var songId = "";
         var userId;    
         var playlist_id;    
@@ -173,32 +174,6 @@
             oauthPlaceholder = document.getElementById('oauth');
 
         var params = getHashParams();
-        //attempt to bypass using app.js for authentication
-        var loginButton = document.getElementById('spotify-login').addEventListener('click', function(){
-            authenticateInfo();
-        })
-
-        function authenticateInfo(){
-            var state = generateRandomString(16);
-            var scope = 'user-read-private user-read-email playlist-modify-private ' + 
-                        'playlist-modify-public user-read-playback-state user-read-recently-played';
-            $.ajax({
-                url: 'https://accounts.spotify.com/authorize',
-                type: "get",
-                data: {
-                    client_id: client_id,
-                    response_type: 'code',
-                    redirect_uri: redirect_uri,
-                    scope: encodeURIComponent(scope),
-                    state: state,
-                },
-                success: function(response) {
-                    console.log(response);
-
-                }
-            });
-        }
-
 
         var access_token = params.access_token,
             refresh_token = params.refresh_token,
@@ -208,7 +183,6 @@
           alert('There was an error during the authentication');
         } else {
           if (access_token) {
-              console.log("test");
             // render oauth info
             oauthPlaceholder.innerHTML = oauthTemplate({
               access_token: access_token,
@@ -356,7 +330,7 @@
                 });
             }
             var roomId = 1000 + Math.round(Math.random()*8999);
-            console.log(roomId);
+            console.log("Room:" + roomId);
             //display queue screen
             let playlistJSON = {"playlist_name": playlist_name, "room_id": roomId};
             queuePlaceholder.innerHTML = queueTemplate(playlistJSON);
@@ -364,6 +338,7 @@
             $('#main-queue').show();
             //every 5 seconds, check the current playing song and update the queue
             setInterval(function(){
+                if(queuePlaying){
                         var queryUrl = "https://api.spotify.com/v1/me/player/currently-playing";
                         $.ajax({
                             url: queryUrl,
@@ -378,6 +353,7 @@
                                 return "";
                             }
                         });
+                }
             }, 5000);
             document.getElementById('search-button').addEventListener('click', function(){
                 if(isSearchbarOut == false){
@@ -409,6 +385,7 @@
         }
 
         function createPlaylist(copy, playlist_name){
+            console.log("Created Playlist");
             var queryUrl = 'https://cors-anywhere.herokuapp.com/https://api.spotify.com/v1/users/' + userId + '/playlists';
             var jsonData = {"name": playlist_name};
             $.ajax({
@@ -421,7 +398,8 @@
                 },
                 contentType: 'application/json',
                 success: function(response) {
-                    playlist_id = response.id;            
+                    playlist_id = response.id;   
+                    console.log(queue);         
                 },
                 error: function(){
                     console.log("error");
@@ -439,8 +417,15 @@
                 },
                 success: function(response) {
                     console.log("playlist unfollowed!");
+                    isSearchbarOut = false;
+                    //clear out queue
+                    queue = [];
+                    songIds = [];
+                    playingSongId = "";
+                    queuePlaying = false;
                     $('#main-queue').hide();
                     $('#loggedin').show();
+
                 },
                 error: function(){
                     console.log("error");
@@ -514,10 +499,11 @@
                 },
                 success: function(response) {
                     if(response.uri != ""){
+                        songUris.push(response.uri);
                         var uArr = [];
                         uArr.push(response.uri);
-                        addToPlaylist(uArr);
                         addToTable(response, songId);
+                        addToPlaylist(uArr);
                     }
                     return response;
                 },
@@ -568,6 +554,29 @@
                 type: 'POST',
                 data: JSON.stringify({"uris": uriArr}),
                 success: function(response) {
+                    console.log("Added song to Spotify playlist");
+                    //if first song added, then start playing from playlist
+                    if(!queuePlaying){
+                        queuePlaying = true;
+                        startPlaylist();
+                    }
+                }
+            });
+        }
+
+        //alter user playback to begin playing from playlist
+        //make sure to set shuffle to off
+        function startPlaylist(){
+            queryUrl = "https://api.spotify.com/v1/me/player/play";
+            $.ajax({
+                url: queryUrl,
+                headers: {
+                    'Authorization': 'Bearer ' + access_token,
+                },
+                contentType: 'application/json',
+                type: 'PUT',
+                data: JSON.stringify({"context_uri": "spotify:playlist:" + playlist_id}),
+                success: function(response) {
                 }
             });
         }
@@ -577,6 +586,7 @@
             //calculate song-data and add to queue object
             var artists = getArtists(songData);
             var runTime = convertMs(songData.duration_ms);
+            console.log(queue);
             var song = {"priority": 1,
                         "liked": true,
                         "artist_name": artists,
@@ -588,6 +598,8 @@
                         "pos_changed": true};
             queue.push(song);
             playingSongId = queue[0].song_id;
+            console.log("Added to table: ");
+
             sortQueue();
         }
 
@@ -600,7 +612,6 @@
                 if(queue[index].song_id == songId){
                     found = true;
                     //mark that the position of this song is going to change
-                    console.log(index);
                     queue[index].pos_changed = true;
                     old_index = index;
                 }
@@ -629,6 +640,8 @@
 
         //resorts the queue based on priority(high to low)
         function sortQueue(){
+            console.log("Unsorted: ");
+            console.log(queue);
             //go through and find max val, append to front, then decrement max by 1 and find 
             //all songs with priority equal to val-i. Continue and stop once you have the queue
             //completely sorted(make a numSorted variable that keeps track of how many elements you move,
@@ -636,8 +649,10 @@
             var maxVal = 0;
             var numSorted = 1;
             var tempQueue = [];
+            var tempSongUris = [];
             //always keep front element in front
             tempQueue.push(queue[0]);
+            tempSongUris.push(songUris[0]);
             //first do a loop to find max value 
             for(var i = 1; i < queue.length; i++){
                 if(queue[i].priority > maxVal){
@@ -648,6 +663,7 @@
             while((numSorted < queue.length)){
                 for(var i = 1; i < queue.length; i++){
                     if(queue[i].priority == maxVal){
+                        tempSongUris.push(songUris[i]);
                         tempQueue.push(queue[i]);
                         numSorted++;
                     }
@@ -655,6 +671,8 @@
                 maxVal--;
             }
             queue = tempQueue;
+            songUris = tempSongUris;
+            console.log("Sorted:");
             console.log(queue);
             refreshPlaylist();
             refreshTable();
@@ -662,33 +680,24 @@
 
         //Alter playlist to match the queue
         function refreshPlaylist(){
-            var queryUrl = "https://api.spotify.com/v1/playlists/" + playlist_id + "/tracks";
-            //loop through queue and find which song was changed, then update pos
-            for(var i = 0; i < queue.length; i++){
-                //if the position in the queue was changed, then move it in the playlist too
-                if(queue[i].pos_changed){
-                    queue[i].pos_changed = false;
-                    console.log("move from position:" + queue[i].last_pos + " to position: " + i );
-                    var jsonData = {"range_start": queue[i].last_pos, "insert_before": i};
-                    $.ajax({
-                        type: 'PUT',
-                        url: queryUrl,
-                        data: JSON.stringify(jsonData),
-                        dataType: 'json',
-                        headers: {
-                            'Authorization': 'Bearer ' + access_token
-                        },
-                        contentType: 'application/json',
-                        success: function(response) {
-                            console.log("success");
-                            resetQueuePositions();
-                        },
-                        error: function(){
-                            console.log("error");
-                        }
-                    });
+            var queryUrl = 'https://api.spotify.com/v1/playlists/' + playlist_id + '/tracks';
+            console.log("Entering refresh playlist");
+            console.log(songUris);
+            $.ajax({
+                url: queryUrl,
+                headers: {
+                    'Authorization': 'Bearer ' + access_token,
+                },
+                contentType: 'application/json',
+                type: 'PUT',
+                data: JSON.stringify({"uris": songUris}),
+                success: function(response) {
+                    console.log("Updated playlist!");
+                },
+                error: function(response){
+                    console.log("uh oh");
                 }
-            }
+            });
         }
 
         //reset the queue based on the updated priorities
@@ -696,6 +705,8 @@
             for(var i = 0; i < queue.length; i++){
                 queue[i].last_pos = i;
             }
+            console.log("Reset queue:")
+            console.log(queue);
         }
 
         //refresh the table based on changed priorities and added/removed tracks
@@ -752,6 +763,7 @@
                     playingSongId = queue[i].song_id;
                 }
             }
+            console.log("Table updated");
         }
 
         //gets the artists on a given song(could be multiple, seperate with ',')
@@ -781,6 +793,7 @@
         function checkIfNewSong(songData){
             if(playingSongId != ""){
                 if(songData.id != playingSongId){
+                    console.log("Song changed");
                     //get the uri to remove, then remove from spotify playlist
                     getFirstSongUri();
                     //delete old song from queue
@@ -800,19 +813,21 @@
         //get first songs uri, then call deleteFromPlaylist
         function getFirstSongUri(){
             var queryUrl = 'https://api.spotify.com/v1/playlists/' + playlist_id + '/tracks';
-                $.ajax({
-                    url: queryUrl,
-                    headers: {
-                        'Authorization': 'Bearer ' + access_token
-                    },
-                    success: function(response) {
+            $.ajax({
+                url: queryUrl,
+                headers: {
+                    'Authorization': 'Bearer ' + access_token
+                },
+                success: function(response) {
+                    if(response.items.length > 0){
                         var uri = response.items[0].track.uri;
                         var uriArr = [];
                         var jsonData = {"uri": uri};
                         uriArr.push(jsonData);
                         deleteFromPlaylist(uriArr);
                     }
-                });
+                }
+            });
         }
 
         function deleteFromPlaylist(uriArr){
@@ -830,20 +845,6 @@
             });
         }
 
-        //   document.getElementById('obtain-new-token').addEventListener('click', function() {
-        //     $.ajax({
-        //       url: '/refresh_token',
-        //       data: {
-        //         'refresh_token': refresh_token
-        //       }
-        //     }).done(function(data) {
-        //       access_token = data.access_token;
-        //       oauthPlaceholder.innerHTML = oauthTemplate({
-        //         access_token: access_token,
-        //         refresh_token: refresh_token
-        //       });
-        //     });
-        //   }, false);
         }
       })();
     </script>
