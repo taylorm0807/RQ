@@ -64,7 +64,10 @@
 
     <script id="queue-template" type="text/x-handlebars-template">
         <h1 class="login-text">Songs in queue for {{playlist_name}}</h1>
-        <h4 class="login-text">Room ID: {{room_id}}</h4>
+        <h4 class="room-id-text">Room ID: {{room_id}}</h4>
+        <div class="subtitle-div">
+            <input type="button" class="btn end-session-button" id="end-session-button" value="End Session"/>
+        </div>
         <table class="table" width="50%">
             <thead>
                 <tr class="queue-table-row">
@@ -150,7 +153,7 @@
         var uriToRemove;
         var loggedin = false;
         var client_id = 'e3a9ee0df38642d591d70229cca7d58a'; // Your client id
-        var redirect_uri = 'http://www.play-rq.com/callback'; // Your redirect uri
+        var redirect_uri = 'http://localhost:80/callback'; // Your redirect uri
 
         //The templates for the different "pages" of the website
         var queueSource = document.getElementById('queue-template').innerHTML,
@@ -382,7 +385,7 @@
                     var addSongsWrapper = document.getElementById('add-songs');
                     var searchbar = document.createElement("input");
                     var button = document.getElementById('search-button');
-                    button.innerHTML = "Add Song";
+                    button.value = "Add Song";
                     searchbar.className = "form-control-underlined";
                     searchbar.id = "song-searchbar";
                     searchbar.type = "text";
@@ -400,6 +403,9 @@
                     addToQueue(false);
                 }
             });
+            document.getElementById('end-session-button').addEventListener('click', function(){
+                deletePlaylist();
+            });
         }
 
         function createPlaylist(copy, playlist_name){
@@ -415,8 +421,26 @@
                 },
                 contentType: 'application/json',
                 success: function(response) {
-                    console.log(response);
                     playlist_id = response.id;            
+                },
+                error: function(){
+                    console.log("error");
+                }
+            });
+        }
+
+        function deletePlaylist(){
+            var queryUrl = 'https://api.spotify.com/v1/playlists/' + playlist_id + '/followers';
+            $.ajax({
+                type: 'DELETE',
+                url: queryUrl,
+                headers: {
+                    'Authorization': 'Bearer ' + access_token
+                },
+                success: function(response) {
+                    console.log("playlist unfollowed!");
+                    $('#main-queue').hide();
+                    $('#loggedin').show();
                 },
                 error: function(){
                     console.log("error");

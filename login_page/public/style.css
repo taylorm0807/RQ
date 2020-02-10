@@ -15,11 +15,31 @@
     color: #1db954;
 }
 
+.room-id-text{
+    color: #1db954;
+    float: left;
+    text-align: left;
+    margin-left: 10%;
+    width: 40%;
+}
+
 .login-button{
     margin-top: 16px;
     color: white; 
     background-color: #1db954;
     padding-bottom: 8px;
+}
+
+.end-session-button{
+    color: white; 
+    background-color: red;
+    float: right;
+}
+
+.subtitle-div{
+    width: 40%;
+    float: left;
+    margin-right: 10%;
 }
 
 .add-song-button{
