@@ -15,7 +15,7 @@ var cookieParser = require('cookie-parser');
 
 var client_id = 'e3a9ee0df38642d591d70229cca7d58a'; // Your client id
 var client_secret = '905089407f1740e89551b470755ade73'; // Your secret
-var redirect_uri = 'http://localhost:80/callback'; // Your redirect uri
+var redirect_uri = 'http://www.play-rq.com/callback'; // Your redirect uri
 
 /**
  * Generates a random string containing numbers and letters
